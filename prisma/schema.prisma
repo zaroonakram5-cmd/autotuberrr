@@ -1,0 +1,381 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  HARDCORE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  TRIALING
+  INCOMPLETE
+}
+
+enum VideoStatus {
+  DRAFT
+  GENERATING_SCRIPT
+  GENERATING_VOICEOVER
+  FETCHING_MEDIA
+  RENDERING
+  READY
+  SCHEDULED
+  POSTED
+  FAILED
+}
+
+enum VideoPlatform {
+  TIKTOK
+  YOUTUBE_SHORTS
+  INSTAGRAM_REELS
+}
+
+enum MediaType {
+  VIDEO
+  IMAGE
+  MUSIC
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  emailVerified     DateTime?
+  name              String?
+  passwordHash      String?
+  image             String?
+  role              UserRole           @default(USER)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  subscription      Subscription?
+  series            Series[]
+  videos            Video[]
+  socialAccounts    SocialAccount[]
+  apiKeys           ApiKey[]
+  usage             Usage[]
+  webhooks          Webhook[]
+  preferences       UserPreferences?
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  tier                 SubscriptionTier   @default(FREE)
+  status               SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Series {
+  id              String      @id @default(cuid())
+  userId          String
+  name            String
+  topic           String
+  promptStyle     String      @default("viral_hook")
+  customPrompt    String?
+  language        String      @default("en")
+  voiceId         String?
+  voiceName       String?
+  backgroundMusic String?
+  videoLength     Int         @default(60)
+  aspectRatio     String      @default("9:16")
+  quality         String      @default("balanced")
+  hardware        String      @default("cpu")
+  scheduleEnabled Boolean     @default(false)
+  scheduleTime    String?     // cron expression
+  scheduleDays    Int[]       // days of week 0-6
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videos Video[]
+
+  @@map("series")
+}
+
+model Video {
+  id              String       @id @default(cuid())
+  userId          String
+  seriesId        String?
+  title           String
+  script          String       @db.Text
+  prompt          String?
+  status          VideoStatus  @default(DRAFT)
+  videoUrl        String?
+  thumbnailUrl    String?
+  duration        Int?         // in seconds
+  fileSize        BigInt?      // in bytes
+  aspectRatio     String       @default("9:16")
+  resolution      String       @default("1080p")
+  voiceId         String?
+  voiceName       String?
+  backgroundMusic String?
+  platforms       VideoPlatform[]
+  scheduledAt     DateTime?
+  postedAt        DateTime?
+  errorMessage    String?      @db.Text
+  metadata        Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  series Series? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  clips  VideoClip[]
+  posts  SocialPost[]
+
+  @@index([userId, status])
+  @@index([seriesId])
+  @@index([scheduledAt])
+  @@map("videos")
+}
+
+model VideoClip {
+  id          String   @id @default(cuid())
+  videoId     String
+  order       Int
+  startTime   Float    // in seconds
+  endTime     Float    // in seconds
+  mediaUrl    String
+  mediaType   MediaType
+  textOverlay String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@map("video_clips")
+}
+
+model SocialAccount {
+  id              String        @id @default(cuid())
+  userId          String
+  platform        VideoPlatform
+  accountId       String
+  accountName     String
+  accessToken     String        @db.Text
+  refreshToken    String?       @db.Text
+  tokenExpiresAt  DateTime?
+  scopes          String[]
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts SocialPost[]
+
+  @@unique([userId, platform, accountId])
+  @@map("social_accounts")
+}
+
+model SocialPost {
+  id              String       @id @default(cuid())
+  videoId         String
+  socialAccountId String
+  platform        VideoPlatform
+  externalId      String?
+  status          String       @default("pending") // pending, posted, failed
+  url             String?
+  errorMessage    String?      @db.Text
+  postedAt        DateTime?
+  createdAt       DateTime     @default(now())
+
+  video         Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@map("social_posts")
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  keyHash     String   @unique
+  keyPrefix   String
+  permissions String[]
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Usage {
+  id          String   @id @default(cuid())
+  userId      String
+  date        DateTime @db.Date
+  videosGenerated Int   @default(0)
+  minutesRendered Int   @default(0)
+  apiCalls    Int      @default(0)
+  storageUsed BigInt   @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("usage")
+}
+
+model Webhook {
+  id          String   @id @default(cuid())
+  userId      String
+  url         String
+  events      String[]
+  secret      String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("webhooks")
+}
+
+model UserPreferences {
+  id                  String @id @default(cuid())
+  userId              String @unique
+  theme               String @default("system")
+  language            String @default("en")
+  timezone            String @default("UTC")
+  emailNotifications  Boolean @default(true)
+  pushNotifications   Boolean @default(true)
+  marketingEmails     Boolean @default(false)
+  autoSave            Boolean @default(true)
+  defaultVideoLength  Int     @default(60)
+  defaultAspectRatio  String  @default("9:16")
+  defaultQuality      String  @default("balanced")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  type        String    // video_generation, voiceover, rendering, posting
+  status      JobStatus @default(PENDING)
+  payload     Json
+  result      Json?
+  error       String?   @db.Text
+  progress    Int       @default(0)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([type, status])
+  @@map("jobs")
+}
+
+model MediaAsset {
+  id          String   @id @default(cuid())
+  type        MediaType
+  source      String   // pexels, pixabay, upload, generated
+  sourceId    String?
+  url         String
+  thumbnailUrl String?
+  duration    Float?   // for video/audio
+  width       Int?
+  height      Int?
+  fileSize    BigInt?
+  tags        String[]
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([type, source])
+  @@index([tags])
+  @@map("media_assets")
+}
+
+model PromptTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  prompt      String   @db.Text
+  variables   Json     // JSON schema for variables
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("prompt_templates")
+}

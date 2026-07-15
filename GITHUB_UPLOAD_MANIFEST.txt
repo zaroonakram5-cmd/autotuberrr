@@ -1,0 +1,34 @@
+# AutoShorts AI - GitHub Upload Manifest
+# Upload THESE files/folders to your GitHub repo root
+# DO NOT upload: node_modules/, .next/, .env, .env.local
+
+=== FOLDERS TO UPLOAD ===
+prisma/
+public/
+src/
+
+=== FILES TO UPLOAD ===
+.env.example
+.env.production.example
+.gitignore
+Dockerfile
+Dockerfile.worker
+README.md
+docker-compose.yml
+next.config.ts
+package.json
+package-lock.json
+postcss.config.js
+tailwind.config.ts
+tsconfig.json
+vercel.json
+worker.ts
+
+=== DO NOT UPLOAD ===
+node_modules/
+.next/
+.env
+.env.local
+.git/
+*.log
+*.zip
